@@ -4,8 +4,11 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { useEvaluation } from "../context/EvaluationContext";
-import { Upload, Settings, RotateCcw } from "lucide-react";
+import { Upload, Settings, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
+// 🔥 IMPORT API
+import { uploadAnswer } from "@/services/api";
 
 export const AnswerScriptUpload = () => {
   const { subjectSettings, setSubjectSettings, isAuthenticated } = useEvaluation();
@@ -24,7 +27,9 @@ export const AnswerScriptUpload = () => {
   const [selectedSubject, setSelectedSubject] = useState(
     subjectSettings?.subject || ""
   );
+
   const [templateFile, setTemplateFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [sections, setSections] = useState({
     sectionA: {
@@ -53,7 +58,7 @@ export const AnswerScriptUpload = () => {
     if (subjectSettings) {
       setSelectedSubject(subjectSettings.subject);
     }
-  }, []);
+  }, [subjectSettings]);
 
   const handleSectionChange = (
     section: keyof typeof sections,
@@ -79,7 +84,8 @@ export const AnswerScriptUpload = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // 🔥 UPDATED SUBMIT (BACKEND CONNECTED)
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!isAuthenticated) {
@@ -97,12 +103,41 @@ export const AnswerScriptUpload = () => {
       return;
     }
 
-    setSubjectSettings({
-      subject: selectedSubject,
-      ...sections,
-    });
+    setIsSubmitting(true);
+    toast.info("Uploading template and saving configuration...");
 
-    toast.success("Evaluation settings saved successfully!");
+    try {
+      // ✅ STEP 1: Upload template PDF
+      const uploadRes = await uploadAnswer(templateFile);
+      console.log("Template uploaded:", uploadRes.file_path);
+
+      // ✅ STEP 2: Save config (frontend + backend ready)
+      const configData = {
+        subject: selectedSubject,
+        ...sections,
+      };
+
+      // Save locally (your context)
+      setSubjectSettings(configData);
+
+      // OPTIONAL: send to backend (if you create /subject API)
+      /*
+      await fetch("http://localhost:8000/subject", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(configData),
+      });
+      */
+
+      toast.success("Evaluation settings saved successfully!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to save configuration");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReset = () => {
@@ -121,21 +156,18 @@ export const AnswerScriptUpload = () => {
     sectionName: string
   ) => {
     const section = sections[sectionKey];
+
     return (
       <Card className="p-6 bg-gradient-to-br from-blue-50 to-white">
-        <h3 className="font-semibold text-lg text-gray-900 mb-4 flex items-center">
-          <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center mr-3">
-            {sectionName}
-          </span>
+        <h3 className="font-semibold text-lg text-gray-900 mb-4">
           Section {sectionName} - {section.marksPerQuestion} Marks Questions
         </h3>
+
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor={`${sectionKey}-min`}>Minimum Marks</Label>
+            <Label>Minimum Marks</Label>
             <Input
-              id={`${sectionKey}-min`}
               type="number"
-              min="0"
               value={section.minimumMarks}
               onChange={(e) =>
                 handleSectionChange(
@@ -144,17 +176,13 @@ export const AnswerScriptUpload = () => {
                   parseInt(e.target.value) || 0
                 )
               }
-              placeholder="Enter minimum marks"
             />
           </div>
+
           <div>
-            <Label htmlFor={`${sectionKey}-questions`}>
-              Questions to Attend
-            </Label>
+            <Label>Questions to Attend</Label>
             <Input
-              id={`${sectionKey}-questions`}
               type="number"
-              min="0"
               value={section.questionsToAttend}
               onChange={(e) =>
                 handleSectionChange(
@@ -163,7 +191,6 @@ export const AnswerScriptUpload = () => {
                   parseInt(e.target.value) || 0
                 )
               }
-              placeholder="Number of questions"
             />
           </div>
         </div>
@@ -173,97 +200,59 @@ export const AnswerScriptUpload = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Answer Script Template Upload
-          </h1>
-          <p className="text-gray-600 mt-2">
-            Configure evaluation settings and upload answer template
-          </p>
-        </div>
-        <Settings className="w-8 h-8 text-blue-600" />
-      </div>
-
-      {subjectSettings && (
-        <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-          <p className="text-green-800 text-sm">
-            <strong>Active Configuration:</strong> {subjectSettings.subject} - Settings will persist until changed
-          </p>
-        </div>
-      )}
+      <h1 className="text-3xl font-bold">Answer Script Template Upload</h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card className="p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Subject Selection
-          </h2>
-          <div>
-            <Label htmlFor="subject">Select Subject</Label>
-            <select
-              id="subject"
-              value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Choose a subject</option>
-              {subjects.map((subject) => (
-                <option key={subject} value={subject}>
-                  {subject}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Label>Select Subject</Label>
 
-          <div className="mt-6">
-            <Label htmlFor="template">Upload Answer Template (PDF)</Label>
-            <div className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
-              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <input
-                id="template"
-                type="file"
-                accept="application/pdf"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <label
-                htmlFor="template"
-                className="cursor-pointer text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Click to upload
-              </label>
-              <p className="text-sm text-gray-500 mt-1">PDF files only</p>
-              {templateFile && (
-                <p className="text-sm text-green-600 mt-2 font-medium">
-                  Selected: {templateFile.name}
-                </p>
-              )}
-            </div>
+          <select
+            value={selectedSubject}
+            onChange={(e) => setSelectedSubject(e.target.value)}
+            className="w-full border p-2 rounded"
+          >
+            <option value="">Choose subject</option>
+            {subjects.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+
+          <div className="mt-4">
+            <Label>Upload Template PDF</Label>
+
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={handleFileChange}
+            />
+
+            {templateFile && (
+              <p className="text-green-600 mt-2">
+                Selected: {templateFile.name}
+              </p>
+            )}
           </div>
         </Card>
 
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Section Configuration
-          </h2>
-          {renderSectionConfig("sectionA", "A")}
-          {renderSectionConfig("sectionB", "B")}
-          {renderSectionConfig("sectionC", "C")}
-          {renderSectionConfig("sectionD", "D")}
-        </div>
+        {renderSectionConfig("sectionA", "A")}
+        {renderSectionConfig("sectionB", "B")}
+        {renderSectionConfig("sectionC", "C")}
+        {renderSectionConfig("sectionD", "D")}
 
         <div className="flex gap-4">
-          <Button type="submit" className="flex-1">
-            Submit Configuration
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="animate-spin mr-2" />
+                Saving...
+              </>
+            ) : (
+              "Submit Configuration"
+            )}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleReset}
-            className="flex items-center"
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
+
+          <Button type="button" variant="outline" onClick={handleReset}>
+            <RotateCcw className="mr-2" />
             Reset
           </Button>
         </div>

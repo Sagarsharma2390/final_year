@@ -8,9 +8,12 @@ import { useEvaluation } from "../context/EvaluationContext";
 import { Camera, CheckCircle, LogIn } from "lucide-react";
 import { toast } from "sonner";
 
+const BASE = "http://localhost:8000";
+
 export const Login = () => {
   const navigate = useNavigate();
-  const { login, teacher } = useEvaluation();
+  const { login } = useEvaluation();
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -19,7 +22,7 @@ export const Login = () => {
     password: "",
   });
 
-  const [faceData, setFaceData] = useState<string>("");
+  const [faceData, setFaceData] = useState("");
   const [isCameraActive, setIsCameraActive] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,6 +32,7 @@ export const Login = () => {
     });
   };
 
+  // 📷 START CAMERA
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -36,50 +40,69 @@ export const Login = () => {
         videoRef.current.srcObject = stream;
         setIsCameraActive(true);
       }
-    } catch (error) {
-      toast.error("Unable to access camera. Please check permissions.");
+    } catch {
+      toast.error("Camera access denied");
     }
   };
 
+  // 📷 CAPTURE FACE
   const captureImage = () => {
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
       const video = videoRef.current;
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL("image/png");
-        setFaceData(imageData);
+        const image = canvas.toDataURL("image/png");
+
+        setFaceData(image);
+
         const stream = video.srcObject as MediaStream;
-        stream?.getTracks().forEach((track) => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
+
         setIsCameraActive(false);
-        toast.success("Face captured successfully!");
+        toast.success("Face captured");
       }
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // 🔥 LOGIN WITH BACKEND
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!teacher) {
-      toast.error("No account found. Please register first.");
-      return;
-    }
-
     if (!faceData) {
-      toast.error("Please capture your face for authentication");
+      toast.error("Please capture face");
       return;
     }
 
-    const isAuthenticated = login(credentials.email, credentials.password);
+    try {
+      const res = await fetch(`${BASE}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: credentials.email,
+          password: credentials.password,
+          face: faceData,
+        }),
+      });
 
-    if (isAuthenticated) {
-      toast.success("Login successful!");
-      navigate("/");
-    } else {
-      toast.error("Invalid credentials. Please try again.");
+      const data = await res.json();
+
+      if (res.ok) {
+        login(credentials.email, credentials.password); // update context
+        toast.success("Login successful!");
+        navigate("/");
+      } else {
+        toast.error(data.message || "Login failed");
+      }
+    } catch (error) {
+      toast.error("Backend connection error");
     }
   };
 
@@ -87,110 +110,63 @@ export const Login = () => {
     <div className="max-w-md mx-auto">
       <Card className="p-8">
         <div className="text-center mb-6">
-          <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <LogIn className="w-8 h-8 text-blue-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Teacher Login</h1>
-          <p className="text-gray-600 mt-2">
-            Access the Smart Evaluation System
-          </p>
+          <LogIn className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+          <h1 className="text-2xl font-bold">Teacher Login</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <Label htmlFor="email">Username or Email</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              value={credentials.email}
-              onChange={handleInputChange}
-              required
-              placeholder="Enter your email"
-            />
-          </div>
+          <Input
+            name="email"
+            type="email"
+            placeholder="Email"
+            onChange={handleInputChange}
+            required
+          />
 
-          <div>
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              value={credentials.password}
-              onChange={handleInputChange}
-              required
-              placeholder="Enter your password"
-            />
-          </div>
+          <Input
+            name="password"
+            type="password"
+            placeholder="Password"
+            onChange={handleInputChange}
+            required
+          />
 
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
-            <Label className="mb-3 block">Face Authentication</Label>
+          {/* FACE AUTH */}
+          <div className="border p-4 rounded">
+            <Label>Face Authentication</Label>
+
             {!faceData ? (
-              <div className="space-y-4">
+              <>
                 {isCameraActive ? (
-                  <div className="space-y-4">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      className="w-full rounded-lg border"
-                    />
-                    <Button
-                      type="button"
-                      onClick={captureImage}
-                      className="w-full"
-                    >
-                      <Camera className="w-4 h-4 mr-2" />
+                  <>
+                    <video ref={videoRef} autoPlay className="w-full" />
+                    <Button type="button" onClick={captureImage}>
                       Capture Face
                     </Button>
-                  </div>
+                  </>
                 ) : (
-                  <Button
-                    type="button"
-                    onClick={startCamera}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    <Camera className="w-4 h-4 mr-2" />
-                    Face Capture Button
+                  <Button type="button" onClick={startCamera}>
+                    Start Camera
                   </Button>
                 )}
                 <canvas ref={canvasRef} className="hidden" />
-              </div>
+              </>
             ) : (
-              <div className="text-center space-y-4">
-                <img
-                  src={faceData}
-                  alt="Captured face"
-                  className="w-32 h-32 object-cover mx-auto rounded-lg border"
-                />
-                <div className="flex items-center justify-center text-green-600">
-                  <CheckCircle className="w-5 h-5 mr-2" />
-                  Face captured
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFaceData("")}
-                >
-                  Recapture
-                </Button>
-              </div>
+              <>
+                <img src={faceData} className="w-32 mx-auto" />
+                <CheckCircle className="text-green-600 mx-auto" />
+                <Button onClick={() => setFaceData("")}>Recapture</Button>
+              </>
             )}
           </div>
 
           <Button type="submit" className="w-full">
-            Submit
+            Login
           </Button>
 
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{" "}
-              <Link to="/register" className="text-blue-600 hover:underline font-medium">
-                Register
-              </Link>
-            </p>
-          </div>
+          <p className="text-center text-sm">
+            Don't have account? <Link to="/register">Register</Link>
+          </p>
         </form>
       </Card>
     </div>

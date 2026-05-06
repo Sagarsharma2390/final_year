@@ -8,6 +8,9 @@ import { useEvaluation } from "../context/EvaluationContext";
 import { Upload, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+// 🔥 IMPORT API
+import { uploadAnswer, evaluateAnswer } from "@/services/api";
+
 export const StudentAnswerUpload = () => {
   const navigate = useNavigate();
   const { subjectSettings, addResult, isAuthenticated } = useEvaluation();
@@ -26,52 +29,7 @@ export const StudentAnswerUpload = () => {
     }
   };
 
-  const simulateAIEvaluation = (): Promise<{
-    sectionA: number;
-    sectionB: number;
-    sectionC: number;
-    sectionD: number;
-  }> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        if (!subjectSettings) {
-          resolve({ sectionA: 0, sectionB: 0, sectionC: 0, sectionD: 0 });
-          return;
-        }
-
-        const sectionA =
-          Math.floor(
-            Math.random() *
-              (subjectSettings.sectionA.questionsToAttend *
-                subjectSettings.sectionA.marksPerQuestion)
-          ) + subjectSettings.sectionA.minimumMarks;
-
-        const sectionB =
-          Math.floor(
-            Math.random() *
-              (subjectSettings.sectionB.questionsToAttend *
-                subjectSettings.sectionB.marksPerQuestion)
-          ) + subjectSettings.sectionB.minimumMarks;
-
-        const sectionC =
-          Math.floor(
-            Math.random() *
-              (subjectSettings.sectionC.questionsToAttend *
-                subjectSettings.sectionC.marksPerQuestion)
-          ) + subjectSettings.sectionC.minimumMarks;
-
-        const sectionD =
-          Math.floor(
-            Math.random() *
-              (subjectSettings.sectionD.questionsToAttend *
-                subjectSettings.sectionD.marksPerQuestion)
-          ) + subjectSettings.sectionD.minimumMarks;
-
-        resolve({ sectionA, sectionB, sectionC, sectionD });
-      }, 3000);
-    });
-  };
-
+  // 🔥 UPDATED HANDLE SUBMIT (REAL BACKEND)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -100,8 +58,22 @@ export const StudentAnswerUpload = () => {
     toast.info("AI is evaluating the answer script...");
 
     try {
-      const sectionScores = await simulateAIEvaluation();
+      // ✅ STEP 1: Upload PDF
+      const uploadRes = await uploadAnswer(answerFile);
+      const filePath = uploadRes.file_path;
 
+      // ✅ STEP 2: Evaluate using backend AI
+      const aiResult = await evaluateAnswer(filePath, subjectSettings);
+
+      // ✅ SECTION DISTRIBUTION (basic split)
+      const sectionScores = {
+        sectionA: Math.floor(aiResult.marks * 0.2),
+        sectionB: Math.floor(aiResult.marks * 0.3),
+        sectionC: Math.floor(aiResult.marks * 0.25),
+        sectionD: Math.floor(aiResult.marks * 0.25),
+      };
+
+      // ✅ TOTAL MARKS
       const totalMarks =
         subjectSettings.sectionA.questionsToAttend *
           subjectSettings.sectionA.marksPerQuestion +
@@ -112,11 +84,7 @@ export const StudentAnswerUpload = () => {
         subjectSettings.sectionD.questionsToAttend *
           subjectSettings.sectionD.marksPerQuestion;
 
-      const scoredMarks =
-        sectionScores.sectionA +
-        sectionScores.sectionB +
-        sectionScores.sectionC +
-        sectionScores.sectionD;
+      const scoredMarks = aiResult.marks;
 
       const result = {
         id: Date.now().toString(),
@@ -131,6 +99,7 @@ export const StudentAnswerUpload = () => {
       addResult(result);
 
       toast.success("Evaluation completed successfully!");
+
       setStudentName("");
       setAnswerFile(null);
 
@@ -138,7 +107,8 @@ export const StudentAnswerUpload = () => {
         navigate("/results");
       }, 1000);
     } catch (error) {
-      toast.error("Evaluation failed. Please try again.");
+      console.error(error);
+      toast.error("Evaluation failed. Check backend connection.");
     } finally {
       setIsEvaluating(false);
     }
@@ -161,7 +131,7 @@ export const StudentAnswerUpload = () => {
       {!subjectSettings && (
         <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
           <p className="text-yellow-800 text-sm">
-            <strong>Notice:</strong> Please configure subject settings in the "Upload Template" page before uploading student answers.
+            <strong>Notice:</strong> Please configure subject settings first.
           </p>
           <Button
             variant="outline"
@@ -223,6 +193,7 @@ export const StudentAnswerUpload = () => {
               </Label>
               <div className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
                 <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+
                 <input
                   id="answerScript"
                   type="file"
@@ -231,6 +202,7 @@ export const StudentAnswerUpload = () => {
                   className="hidden"
                   disabled={isEvaluating}
                 />
+
                 <label
                   htmlFor="answerScript"
                   className={`${
@@ -241,9 +213,11 @@ export const StudentAnswerUpload = () => {
                 >
                   Click to upload answer script
                 </label>
+
                 <p className="text-sm text-gray-500 mt-2">
                   PDF format only, maximum 10MB
                 </p>
+
                 {answerFile && (
                   <div className="mt-4 bg-green-50 p-3 rounded-lg">
                     <p className="text-sm text-green-700 font-medium">
@@ -286,8 +260,7 @@ export const StudentAnswerUpload = () => {
               AI Evaluation in Progress
             </h3>
             <p className="text-sm text-gray-600">
-              Our AI is analyzing the answer script, evaluating responses across
-              all sections, and calculating scores...
+              Processing PDF → Extracting text → Evaluating using AI...
             </p>
           </div>
         </Card>
